@@ -1,264 +1,466 @@
--- //=== Dujina Hub GUI (Black Glossy Final Edition by GPT-5) ===\\
+-- Universal Orion GUI script
+-- Features: Player (WalkSpeed/Jump), Movement (Fly, Noclip), Visuals (ESP), Utilities (Teleport, Reset HRP)
+-- Notes: Requires an executor that supports loadstring and game:HttpGet.
+-- Warning: Some games have anti-cheat. Use responsibly.
+
+-- ====== CONFIG / SAFE GUARDS ======
+local OrionURL = "https://raw.githubusercontent.com/shlexware/Orion/main/source" -- Orion loader
+local MIN_WALKSPEED, MAX_WALKSPEED = 16, 500
+local MIN_JUMPPOWER, MAX_JUMPPOWER = 50, 500
+
+-- ====== LOAD ORION ======
+local success, Orion = pcall(function()
+    return loadstring(game:HttpGet(OrionURL))()
+end)
+if not success or typeof(Orion) ~= "table" then
+    warn("Failed to load Orion UI library. Check your executor or the URL.")
+    return
+end
+
+-- ====== UTILITIES ======
 local Players = game:GetService("Players")
-local TeleportService = game:GetService("TeleportService")
-local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local player = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local placeId = game.PlaceId
-
--- Hapus GUI lama jika sudah ada
-if playerGui:FindFirstChild("TeleportGui") then
-	playerGui.TeleportGui:Destroy()
+local function getCharacter()
+    return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 end
 
--- GUI utama
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "TeleportGui"
-screenGui.ResetOnSpawn = false
-screenGui.Parent = playerGui
+local function getHumanoid()
+    local char = getCharacter()
+    return char:FindFirstChildOfClass("Humanoid")
+end
 
--- Frame utama
-local frame = Instance.new("Frame")
-frame.Size = UDim2.new(0, 270, 0, 230)
-frame.Position = UDim2.new(0.5, -135, 0.5, -115)
-frame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-frame.BorderSizePixel = 0
-frame.AnchorPoint = Vector2.new(0.5, 0.5)
-frame.Parent = screenGui
+local function getRootPart()
+    local char = LocalPlayer.Character
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+end
 
--- Efek gradient glossy
-local gradient = Instance.new("UIGradient")
-gradient.Color = ColorSequence.new{
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(25, 25, 25)),
-	ColorSequenceKeypoint.new(0.5, Color3.fromRGB(10, 10, 10)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
+local function safeSetWalkSpeed(speed)
+    local hum = getHumanoid()
+    if hum and typeof(speed) == "number" then
+        pcall(function() hum.WalkSpeed = speed end)
+    end
+end
+
+local function safeSetJumpPower(power)
+    local hum = getHumanoid()
+    if hum and typeof(power) == "number" then
+        pcall(function() hum.JumpPower = power end)
+    end
+end
+
+-- ====== CREATE WINDOW ======
+local Window = Orion:MakeWindow({
+    Name = "Universal Utility Hub",
+    HidePremium = false,
+    IntroText = "Universal Orion script — use responsibly"
+})
+
+-- ====== HOME TAB ======
+local homeTab = Window:MakeTab({
+    Name = "Home",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+homeTab:AddParagraph("Welcome", "This GUI aims to be universal; some features may not work in games with strong anti-cheat. Features included: WalkSpeed, JumpPower, Fly, Noclip, ESP, Teleport to player.")
+
+homeTab:AddButton({
+    Name = "Restore defaults",
+    Callback = function()
+        safeSetWalkSpeed(16)
+        safeSetJumpPower(50)
+        Orion:MakeNotification({
+            Name = "Defaults restored",
+            Content = "WalkSpeed and JumpPower returned to defaults.",
+            Image = "rbxassetid://4483345998",
+            Time = 4
+        })
+    end
+})
+
+-- ====== PLAYER TAB ======
+local playerTab = Window:MakeTab({
+    Name = "Player",
+    Icon = "rbxassetid://6023426915",
+    PremiumOnly = false
+})
+
+-- WalkSpeed slider
+local currentWalk = 16
+playerTab:AddSlider({
+    Name = "WalkSpeed",
+    Min = MIN_WALKSPEED,
+    Max = MAX_WALKSPEED,
+    Default = currentWalk,
+    Color = Color3.fromRGB(255,255,255),
+    Increment = 1,
+    ValueName = "studs/s",
+    Callback = function(v)
+        currentWalk = v
+        safeSetWalkSpeed(v)
+    end
+})
+
+-- JumpPower slider
+local currentJump = 50
+playerTab:AddSlider({
+    Name = "JumpPower",
+    Min = MIN_JUMPPOWER,
+    Max = MAX_JUMPPOWER,
+    Default = currentJump,
+    Increment = 1,
+    ValueName = "power",
+    Callback = function(v)
+        currentJump = v
+        safeSetJumpPower(v)
+    end
+})
+
+playerTab:AddToggle({
+    Name = "Auto-restore on respawn",
+    Default = true,
+    Callback = function(state)
+        if state then
+            -- respawn handler
+            Players.PlayerAdded:Connect(function() end) -- placeholder to keep pattern
+        end
+    end
+})
+
+-- Ensure settings reapply on character spawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    wait(0.5)
+    safeSetWalkSpeed(currentWalk)
+    safeSetJumpPower(currentJump)
+end)
+
+-- ====== MOVEMENT TAB ======
+local movementTab = Window:MakeTab({
+    Name = "Movement",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- Noclip implementation
+local noclipEnabled = false
+local noclipConn = nil
+
+movementTab:AddToggle({
+    Name = "Noclip",
+    Default = false,
+    Callback = function(state)
+        noclipEnabled = state
+        if state then
+            noclipConn = RunService.Stepped:Connect(function()
+                local char = LocalPlayer.Character
+                if char then
+                    for _, part in pairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                            pcall(function() part.CanCollide = false end)
+                        end
+                    end
+                end
+            end)
+        else
+            if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+            local char = LocalPlayer.Character
+            if char then
+                for _, part in pairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        pcall(function() part.CanCollide = true end)
+                    end
+                end
+            end
+        end
+    end
+})
+
+-- Simple fly (works in many games) - toggle with key
+local flyEnabled = false
+local flySpeed = 50
+local flyBV, flyBG
+movementTab:AddToggle({
+    Name = "Fly (Toggle with keybind)",
+    Default = false,
+    Callback = function(state)
+        flyEnabled = state
+        local root = getRootPart()
+        if not root then return end
+        if flyEnabled then
+            -- Setup BodyVelocity and BodyGyro
+            flyBV = Instance.new("BodyVelocity")
+            flyBV.Velocity = Vector3.new(0,0,0)
+            flyBV.MaxForce = Vector3.new(9e9,9e9,9e9)
+            flyBV.Parent = root
+
+            flyBG = Instance.new("BodyGyro")
+            flyBG.D = 5
+            flyBG.MaxTorque = Vector3.new(9e9,9e9,9e9)
+            flyBG.Parent = root
+
+            Orion:MakeNotification({
+                Name = "Fly Enabled",
+                Content = "Use WASD + Space/Ctrl to move while flying. Toggle again to disable.",
+                Time = 4
+            })
+        else
+            if flyBV then flyBV:Destroy() flyBV = nil end
+            if flyBG then flyBG:Destroy() flyBG = nil end
+        end
+    end
+})
+
+-- Fly controls (local loop)
+local userInputService = game:GetService("UserInputService")
+local flyingVector = Vector3.new(0,0,0)
+local flyMoveConn
+flyMoveConn = RunService.RenderStepped:Connect(function()
+    if flyEnabled and flyBV and flyBG and getRootPart() then
+        local root = getRootPart()
+        local cam = workspace.CurrentCamera
+        local moveVec = Vector3.new(0,0,0)
+        local isForward = userInputService:IsKeyDown(Enum.KeyCode.W)
+        local isBack    = userInputService:IsKeyDown(Enum.KeyCode.S)
+        local isLeft    = userInputService:IsKeyDown(Enum.KeyCode.A)
+        local isRight   = userInputService:IsKeyDown(Enum.KeyCode.D)
+        local isUp      = userInputService:IsKeyDown(Enum.KeyCode.Space)
+        local isDown    = userInputService:IsKeyDown(Enum.KeyCode.LeftControl) or userInputService:IsKeyDown(Enum.KeyCode.C)
+
+        if isForward then moveVec = moveVec + (cam.CFrame.LookVector) end
+        if isBack    then moveVec = moveVec - (cam.CFrame.LookVector) end
+        if isLeft    then moveVec = moveVec - (cam.CFrame.RightVector) end
+        if isRight   then moveVec = moveVec + (cam.CFrame.RightVector) end
+        if isUp      then moveVec = moveVec + Vector3.new(0,1,0) end
+        if isDown    then moveVec = moveVec - Vector3.new(0,1,0) end
+
+        if moveVec.Magnitude > 0 then
+            moveVec = moveVec.Unit * flySpeed
+        end
+
+        flyBV.Velocity = moveVec
+        flyBG.CFrame = workspace.CurrentCamera.CFrame
+    end
+end)
+
+movementTab:AddSlider({
+    Name = "Fly Speed",
+    Min = 10,
+    Max = 400,
+    Default = flySpeed,
+    Increment = 1,
+    ValueName = "speed",
+    Callback = function(v)
+        flySpeed = v
+    end
+})
+
+-- Keybind to toggle fly quickly
+movementTab:AddBind({
+    Name = "Fly Keybind",
+    Default = Enum.KeyCode.F,
+    Hold = false,
+    Callback = function()
+        flyEnabled = not flyEnabled
+        if flyEnabled then
+            local root = getRootPart()
+            if root then
+                -- create BV/BG if not exist
+                if not flyBV then
+                    flyBV = Instance.new("BodyVelocity")
+                    flyBV.MaxForce = Vector3.new(9e9,9e9,9e9)
+                    flyBV.Parent = root
+                end
+                if not flyBG then
+                    flyBG = Instance.new("BodyGyro")
+                    flyBG.MaxTorque = Vector3.new(9e9,9e9,9e9)
+                    flyBG.Parent = root
+                end
+            end
+        else
+            if flyBV then flyBV:Destroy() flyBV = nil end
+            if flyBG then flyBG:Destroy() flyBG = nil end
+        end
+    end
+})
+
+-- ====== VISUALS TAB ======
+local visualsTab = Window:MakeTab({
+    Name = "Visuals",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- Basic ESP (names + boxes) - not perfect but universal
+local espEnabled = false
+local espObjects = {}
+
+local function createESPForPlayer(plr)
+    if plr == LocalPlayer then return end
+    local char = plr.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+    if not hrp then return end
+
+    -- Billboard for name + distance
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "SimpleESP"
+    billboard.Adornee = hrp
+    billboard.Size = UDim2.new(0, 150, 0, 50)
+    billboard.AlwaysOnTop = true
+
+    local frame = Instance.new("Frame", billboard)
+    frame.Size = UDim2.new(1,0,1,0)
+    frame.BackgroundTransparency = 0.35
+    frame.BorderSizePixel = 0
+
+    local txt = Instance.new("TextLabel", frame)
+    txt.Size = UDim2.new(1,0,1,0)
+    txt.BackgroundTransparency = 1
+    txt.TextScaled = true
+    txt.Font = Enum.Font.SourceSansSemibold
+    txt.Text = plr.Name
+    txt.TextColor3 = Color3.new(1,1,1)
+
+    billboard.Parent = game.CoreGui or workspace -- prefer CoreGui if available
+
+    espObjects[plr] = billboard
+end
+
+local function removeESPForPlayer(plr)
+    if espObjects[plr] then
+        pcall(function() espObjects[plr]:Destroy() end)
+        espObjects[plr] = nil
+    end
+end
+
+-- ESP toggle
+visualsTab:AddToggle({
+    Name = "Player ESP",
+    Default = false,
+    Callback = function(state)
+        espEnabled = state
+        if state then
+            -- create for existing players
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer then createESPForPlayer(plr) end
+            end
+            -- players joining
+            Players.PlayerAdded:Connect(function(plr)
+                if espEnabled then
+                    plr.CharacterAdded:Connect(function()
+                        wait(0.3)
+                        if espEnabled then createESPForPlayer(plr) end
+                    end)
+                end
+            end)
+            -- characters added for existing players
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr.Character and plr ~= LocalPlayer then
+                    pcall(function() createESPForPlayer(plr) end)
+                end
+            end
+        else
+            -- remove all
+            for plr, gui in pairs(espObjects) do
+                pcall(function() gui:Destroy() end)
+            end
+            espObjects = {}
+        end
+    end
+})
+
+-- Clean up if a player leaves
+Players.PlayerRemoving:Connect(function(plr)
+    removeESPForPlayer(plr)
+end)
+
+-- ====== UTILITIES TAB ======
+local utilitiesTab = Window:MakeTab({
+    Name = "Utilities",
+    Icon = "rbxassetid://6034287081",
+    PremiumOnly = false
+})
+
+utilitiesTab:AddTextbox({
+    Name = "Teleport to Player (enter exact player name)",
+    Default = "",
+    TextDisappear = true,
+    Callback = function(txt)
+        if txt == "" then
+            Orion:MakeNotification({Name="Teleport", Content="No name provided.", Time=3})
+            return
+        end
+        local target = Players:FindFirstChild(txt)
+        if not target or not target.Character then
+            Orion:MakeNotification({Name="Teleport", Content="Player not found or no character.", Time=3})
+            return
+        end
+        local root = getRootPart()
+        local targetRoot = target.Character:FindFirstChild("HumanoidRootPart") or target.Character:FindFirstChild("Torso")
+        if root and targetRoot then
+            pcall(function() root.CFrame = targetRoot.CFrame + Vector3.new(0,3,0) end)
+            Orion:MakeNotification({Name="Teleport", Content="Teleported to "..txt, Time=3})
+        end
+    end
+})
+
+utilitiesTab:AddButton({
+    Name = "Reset HumanoidRootPart Position",
+    Callback = function()
+        local root = getRootPart()
+        if root then
+            pcall(function() root.CFrame = workspace:FindFirstChild("SpawnLocation") and workspace.SpawnLocation.CFrame + Vector3.new(0,5,0) or CFrame.new(0,50,0) end)
+            Orion:MakeNotification({Name="Reset HRP", Content="Tried to reset HRP position.", Time=3})
+        else
+            Orion:MakeNotification({Name="Reset HRP", Content="Root part not found.", Time=3})
+        end
+    end
+})
+
+utilitiesTab:AddButton({
+    Name = "Copy Player Display Name",
+    Callback = function()
+        local name = LocalPlayer.Name
+        pcall(function() setclipboard(name) end)
+        Orion:MakeNotification({Name="Clipboard", Content="Player name copied to clipboard (if supported).", Time=3})
+    end
+})
+
+-- ====== CLEANUP ON CLOSE ======
+Window:MakeNotification({
+    Name = "Ready",
+    Content = "GUI loaded. Use the tabs to control features.",
+    Image = "rbxassetid://4483345998",
+    Time = 4
+})
+
+-- When the script ends or window is destroyed, clean some things up (best-effort)
+-- (Orion windows typically have a close; we provide safe disconnects as needed)
+local function cleanup()
+    if noclipConn then
+        noclipConn:Disconnect()
+        noclipConn = nil
+    end
+    if flyBV then pcall(function() flyBV:Destroy() end) end
+    if flyBG then pcall(function() flyBG:Destroy() end) end
+    for plr, gui in pairs(espObjects) do
+        pcall(function() gui:Destroy() end)
+    end
+    espObjects = {}
+end
+
+-- Try to hook the window close event if available
+if Window and Window.Parent then
+    -- There is no universal close event for Orion exposed here; rely on cleanup when executor script ends.
+end
+
+-- return reference (optional)
+return {
+    Orion = Orion,
+    Window = Window,
+    Cleanup = cleanup
 }
-gradient.Rotation = 90
-gradient.Parent = frame
-
--- Bayangan halus
-local shadow = Instance.new("ImageLabel")
-shadow.AnchorPoint = Vector2.new(0.5, 0.5)
-shadow.Position = UDim2.new(0.5, 0, 0.5, 5)
-shadow.Size = UDim2.new(1, 50, 1, 50)
-shadow.Image = "rbxassetid://1316045217"
-shadow.ImageColor3 = Color3.fromRGB(0, 0, 0)
-shadow.ImageTransparency = 0.55
-shadow.ScaleType = Enum.ScaleType.Slice
-shadow.SliceCenter = Rect.new(10, 10, 118, 118)
-shadow.ZIndex = 0
-shadow.Parent = frame
-
--- Header
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1, 0, 0, 38)
-header.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-header.BorderSizePixel = 0
-header.Parent = frame
-
-local headerGradient = Instance.new("UIGradient")
-headerGradient.Color = ColorSequence.new{
-	ColorSequenceKeypoint.new(0, Color3.fromRGB(50, 50, 50)),
-	ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 15, 15))
-}
-headerGradient.Rotation = 90
-headerGradient.Parent = header
-
--- Judul GUI
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -70, 1, 0)
-title.Position = UDim2.new(0, 10, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = "⚡ Dujina Hub"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 20
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = header
-
--- Tombol minimize
-local minimizeButton = Instance.new("TextButton")
-minimizeButton.Size = UDim2.new(0, 25, 0, 25)
-minimizeButton.Position = UDim2.new(1, -60, 0.5, -12)
-minimizeButton.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-minimizeButton.TextColor3 = Color3.new(1, 1, 1)
-minimizeButton.Text = "-"
-minimizeButton.Font = Enum.Font.GothamBold
-minimizeButton.TextSize = 18
-minimizeButton.Parent = header
-
--- Tombol exit
-local exitButton = Instance.new("TextButton")
-exitButton.Size = UDim2.new(0, 25, 0, 25)
-exitButton.Position = UDim2.new(1, -30, 0.5, -12)
-exitButton.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
-exitButton.TextColor3 = Color3.new(1, 1, 1)
-exitButton.Text = "X"
-exitButton.Font = Enum.Font.GothamBold
-exitButton.TextSize = 18
-exitButton.Parent = header
-
--- Kontainer isi
-local content = Instance.new("Frame")
-content.Size = UDim2.new(1, 0, 1, -38)
-content.Position = UDim2.new(0, 0, 0, 38)
-content.BackgroundTransparency = 1
-content.Parent = frame
-
--- Suara GUI
-local hoverSound = Instance.new("Sound", screenGui)
-hoverSound.SoundId = "rbxassetid://9118823103"
-hoverSound.Volume = 0.3
-
-local clickSound = Instance.new("Sound", screenGui)
-clickSound.SoundId = "rbxassetid://9118822712"
-clickSound.Volume = 0.4
-
-local startupSound = Instance.new("Sound", screenGui)
-startupSound.SoundId = "rbxassetid://9119114482"
-startupSound.Volume = 0.5
-
--- Fungsi tombol glossy
-local function createButton(text, baseColor, yPos)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(0, 230, 0, 45)
-	button.Position = UDim2.new(0, 20, 0, yPos)
-	button.BackgroundColor3 = baseColor
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.Font = Enum.Font.GothamBold
-	button.TextSize = 18
-	button.Text = text
-	button.AutoButtonColor = false
-	button.Parent = content
-
-	local btnGradient = Instance.new("UIGradient")
-	btnGradient.Color = ColorSequence.new{
-		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-		ColorSequenceKeypoint.new(0.15, Color3.fromRGB(180, 180, 180)),
-		ColorSequenceKeypoint.new(0.5, baseColor),
-		ColorSequenceKeypoint.new(1, baseColor:lerp(Color3.new(0, 0, 0), 0.5))
-	}
-	btnGradient.Rotation = 90
-	btnGradient.Transparency = NumberSequence.new(0.35)
-	btnGradient.Parent = button
-
-	button.MouseEnter:Connect(function()
-		TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = baseColor:Lerp(Color3.new(1,1,1),0.2)}):Play()
-		hoverSound:Play()
-	end)
-	button.MouseLeave:Connect(function()
-		TweenService:Create(button, TweenInfo.new(0.15), {BackgroundColor3 = baseColor}):Play()
-	end)
-	button.MouseButton1Click:Connect(function()
-		clickSound:Play()
-	end)
-	return button
-end
-
--- Tombol-tombol
-local deleteButton = createButton("🧹 Hapus Small Notification", Color3.fromRGB(130,60,60), 10)
-local teleportButton = createButton("🚀 Pindah Server Lain", Color3.fromRGB(60,110,180), 65)
-local rejoinButton = createButton("🔁 Rejoin Server", Color3.fromRGB(80,160,80), 120)
-local copyIdButton = createButton("📋 Copy Server ID", Color3.fromRGB(180,140,60), 175)
-
--- Fungsi tombol
-deleteButton.MouseButton1Click:Connect(function()
-	local notif = playerGui:FindFirstChild("Small Notification")
-	if notif then
-		notif:Destroy()
-		deleteButton.Text = "✅ Notifikasi Terhapus"
-	else
-		deleteButton.Text = "❌ Tidak Ditemukan"
-	end
-end)
-
-teleportButton.MouseButton1Click:Connect(function()
-	teleportButton.Text = "🔄 Sedang Mentransfer..."
-	teleportButton.Active = false
-	TeleportService:Teleport(placeId, player)
-end)
-
-rejoinButton.MouseButton1Click:Connect(function()
-	rejoinButton.Text = "🔁 Rejoining..."
-	rejoinButton.Active = false
-	TeleportService:Teleport(placeId, player)
-end)
-
-copyIdButton.MouseButton1Click:Connect(function()
-	local id = game.JobId
-	if setclipboard then
-		setclipboard(id)
-		copyIdButton.Text = "📋 ID Disalin!"
-	else
-		copyIdButton.Text = "❌ Tidak bisa menyalin!"
-	end
-end)
-
--- Minimize
-local minimized = false
-local function toggleMinimize()
-	minimized = not minimized
-	minimizeButton.Text = minimized and "+" or "-"
-	clickSound:Play()
-
-	if minimized then
-		TweenService:Create(content, TweenInfo.new(0.3), {
-			Size = UDim2.new(1, 0, 0, 0),
-			BackgroundTransparency = 1
-		}):Play()
-	else
-		content.Visible = true
-		content.BackgroundTransparency = 1
-		content.Size = UDim2.new(1, 0, 0, 0)
-		TweenService:Create(content, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-			Size = UDim2.new(1, 0, 1, -38),
-			BackgroundTransparency = 0
-		}):Play()
-	end
-end
-minimizeButton.MouseButton1Click:Connect(toggleMinimize)
-
--- Exit
-exitButton.MouseButton1Click:Connect(function()
-	clickSound:Play()
-	TweenService:Create(frame, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
-	task.wait(0.4)
-	screenGui:Destroy()
-end)
-
--- Animasi awal + suara startup
-frame.Size = UDim2.new(0, 0, 0, 0)
-frame.BackgroundTransparency = 1
-TweenService:Create(frame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-	Size = UDim2.new(0, 270, 0, 230),
-	BackgroundTransparency = 0
-}):Play()
-startupSound:Play()
-
--- Drag GUI
-local dragging, dragStart, startPos
-header.InputBegan:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = true
-		dragStart = input.Position
-		startPos = frame.Position
-	end
-end)
-header.InputChanged:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
-		local delta = input.Position - dragStart
-		frame.Position = UDim2.new(
-			startPos.X.Scale,
-			startPos.X.Offset + delta.X,
-			startPos.Y.Scale,
-			startPos.Y.Offset + delta.Y
-		)
-	end
-end)
-UserInputService.InputEnded:Connect(function(input)
-	if input.UserInputType == Enum.UserInputType.MouseButton1 then
-		dragging = false
-	end
-end)
